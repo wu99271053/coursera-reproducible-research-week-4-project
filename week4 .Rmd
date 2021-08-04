@@ -1,0 +1,72 @@
+---
+title: "Untitled"
+author: "eric"
+date: "02/08/2021"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Synopsis
+
+This document include the processes of the downloading data, data cleaning, data analysis and data visualization. The aim of this document is to address two questions: Across the United States, which types of events are most harmful with respect to population health? And across the United States, which types of events have the greatest economic consequences? This analysis showed top ten events for each question 
+
+```{r load package,message=FALSE,warning=FALSE}
+library(stringr)
+library(ggplot2)
+library(dplyr)
+library(Hmisc)
+library(reshape2)
+```
+## Data cleaning
+After download, 7 columns were extracted from the dataset, which are 
+* EVTYPE, the type of events, 
+* FATALITIES, the number of fatalities caused by events
+* INJURIES, the number of injured peopler caused by events
+* PROPDMG, the property damage
+* PROPDMGEXP, the exponent of the PROPDMG data
+* CROPDMG, the crop damage
+* CROPDMGEXP, the exponent of the CROPDMG data 
+data was download from https://d396qusza40orc.cloudfront.net/repdata%2Fdata%2FStormData.csv.bz2, and named as data.csv using download.file("https://d396qusza40orc.cloudfront.net/repdata%2Fdata%2FStormData.csv.bz2","data.csv") command,
+```{r reading data}
+rawdata<-read.csv("./data.csv") # download and read the data 
+
+data<-select(rawdata,EVTYPE,FATALITIES,INJURIES,PROPDMG,PROPDMGEXP,CROPDMG,CROPDMGEXP)
+colnames(data)<-tolower(colnames(data)) # select the useful column and change the colnames to lower capital.
+
+data$propdmgexp<-as.numeric(str_replace_all(data$propdmgexp, c("[Kk]" = "3", "[Mm]" = "6", "B"="9","\\+"="0","\\?"="0","[Hh]"="2","\\-"="0")))#change exponent designator to value,the unclear exponent values were set to 0
+data$propdmgexp<-impute(data$propdmgexp,0) #after coercion, the "" in the exponent data was converted into NA, which can be imputed to 0
+
+data$cropdmgexp<-as.numeric(str_replace_all(data$cropdmgexp, c("[Kk]" = "3", "[Mm]" = "6", "B"="9","\\+"="0","\\?"="0","[Hh]"="2","\\-"="0")))
+data$cropdmgexp<-impute(data$cropdmgexp,0)
+
+data<-mutate(data,property=propdmg*10^propdmgexp,crop=cropdmg*10^cropdmgexp)# calculate the total damage value per year. 
+```
+After these steps, the data is clean and informative, ready for analysis.The data analysis used functions from Ddply and reshape2 packages.
+```{r Data analysis }
+analysisdata<-data%>% # chain operation from ddply
+  group_by(evtype)%>%
+  summarise(Injuries=sum(injuries),
+            Fatalities=sum(fatalities),
+            Propertydamage=sum(property),
+            Cropdamage=sum(crop))%>%# calculate the total damage across decades. 
+  melt(id.var="evtype",variable.name="type")%>% #transform the dataset from wide format to long format. 
+  transform(type==factor(type))
+```
+After the analysis, we got what we want, and it is time to plot!
+
+## Result 
+```{r fig.cap="plot for population health damage data ",fig.cap="plot for economic damage data"}
+healthdata<-rbind(head(arrange(filter(analysisdata,type=="Injuries"),desc(value)),10),# rank the top ten event responsible for most injuries.
+      head(arrange(filter(analysisdata,type=="Fatalities"),desc(value)),10)) # rank the top ten event responsible for most fatalities.
+
+ecomonicdata<-rbind(head(arrange(filter(analysisdata,type=="Propertydamage"),desc(value)),10), # rank the top ten event responsible for most property damage .
+      head(arrange(filter(analysisdata,type=="Cropdamage"),desc(value)),10))# rank the top ten event responsible for most crop damage.
+
+ggplot(healthdata,aes(x=evtype,y=value,color=type,label=value))+facet_wrap(.~type)+geom_col()+scale_y_continuous(breaks = seq(0,100000,5000))+theme(axis.text.x=element_text(angle = 90, vjust = 0.5))
+
+ggplot(ecomonicdata,aes(x=evtype,y=value,color=type,label=value))+facet_wrap(.~type)+geom_col()+scale_y_continuous(breaks = seq(0,100000,5000))+theme(axis.text.x=element_text(angle = 90, vjust = 0.5))
+```
+
